@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer } from "ws";
 import multer from "multer";
@@ -20,6 +20,14 @@ import {
   insertStudyGroupSchema,
 } from "@shared/schema";
 
+// Helper to get user ID consistently
+const getUserId = (req: Request): string => {
+    const user = req.user as any;
+    if (!user) throw new Error("User not authenticated");
+    return user.id || user.claims?.sub;
+};
+
+
 // Configure multer for file uploads
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -40,7 +48,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Topic routes
   app.post("/api/topics", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.id;
+      const userId = getUserId(req);
       const topicData = insertTopicSchema.parse({ ...req.body, userId });
       const topic = await storage.createTopic(topicData);
       await storage.createLearningSession({
@@ -60,7 +68,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/topics", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.id;
+      const userId = getUserId(req);
       const topics = await storage.getUserTopics(userId);
       res.json(topics);
     } catch (error) {
@@ -141,7 +149,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/ai/quiz", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.id;
+      const userId = getUserId(req);
       const { topic, questionCount = 5, topicId } = req.body;
       
       if (!topic) {
@@ -150,7 +158,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const quizData = await generateQuiz(topic, questionCount);
       
-      // Save quiz to database
       const quiz = await storage.createQuiz({
         topicId: topicId,
         userId,
@@ -167,7 +174,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/ai/flashcards", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.id;
+      const userId = getUserId(req);
       const { topic, topicId, cardCount = 10 } = req.body;
       
       if (!topic || !topicId) {
@@ -176,7 +183,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
       const flashcardsData = await generateFlashcards(topic, cardCount);
       
-      // Save flashcards to database
       const savedCards = [];
       for (const card of flashcardsData.cards) {
         const savedCard = await storage.createFlashcard({
@@ -214,7 +220,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Quiz attempt routes
   app.post("/api/quizzes/:id/attempt", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.id;
+      const userId = getUserId(req);
       const { answers } = req.body;
       
       const quiz = await storage.getTopic(req.params.id);
@@ -263,7 +269,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/posts", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.id;
+      const userId = getUserId(req);
       const postData = insertPostSchema.parse({ ...req.body, userId });
       
       const post = await storage.createPost(postData);
@@ -276,7 +282,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/posts/:id/like", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.id;
+      const userId = getUserId(req);
       await storage.togglePostLike(req.params.id, userId);
       res.json({ success: true });
     } catch (error) {
@@ -287,7 +293,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/posts/:id/comment", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.id;
+      const userId = getUserId(req);
       const { content } = req.body;
       
       if (!content) {
@@ -320,7 +326,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/study-groups", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.id;
+      const userId = getUserId(req);
       const groupData = insertStudyGroupSchema.parse({ 
         ...req.body, 
         creatorId: userId 
@@ -336,7 +342,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/study-groups/:id/join", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.id;
+      const userId = getUserId(req);
       await storage.joinStudyGroup(req.params.id, userId);
       res.json({ success: true });
     } catch (error) {
@@ -367,7 +373,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // User progress routes
   app.get("/api/user/achievements", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.id;
+      const userId = getUserId(req);
       const achievements = await storage.getUserAchievements(userId);
       res.json(achievements);
     } catch (error) {
@@ -378,7 +384,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/user/quiz-attempts", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.id;
+      const userId = getUserId(req);
       const attempts = await storage.getUserQuizAttempts(userId);
       res.json(attempts);
     } catch (error) {
@@ -399,7 +405,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/user/stats", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.id;
+      const userId = getUserId(req);
       const stats = await storage.getUserStats(userId);
       res.json(stats);
     } catch (error) {
@@ -424,7 +430,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/user/completed-quizzes-count", isAuthenticated, async (req: any, res) => {
     try {
-        const userId = req.user.id;
+        const userId = getUserId(req);
         const count = await storage.getCompletedQuizzesCount(userId);
         res.json({ count });
     } catch (error) {
@@ -435,7 +441,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/user/completed-topics-count", isAuthenticated, async (req: any, res) => {
     try {
-        const userId = req.user.id;
+        const userId = getUserId(req);
         const count = await storage.getCompletedTopicsCount(userId);
         res.json({ count });
     } catch (error) {
