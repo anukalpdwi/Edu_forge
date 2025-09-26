@@ -27,7 +27,7 @@ import {
   type LearningSession,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, gte, sql, count } from "drizzle-orm";
+import { eq, desc, and, gte, sql, count, avg } from "drizzle-orm";
 
 export interface IStorage {
   // User operations (mandatory for Replit Auth)
@@ -39,6 +39,7 @@ export interface IStorage {
   getUserTopics(userId: string): Promise<Topic[]>;
   getTopic(id: string): Promise<Topic | undefined>;
   updateTopicProgress(id: string, progress: number): Promise<void>;
+  getCompletedTopicsCount(userId: string): Promise<number>;
   
   // Quiz operations
   createQuiz(quiz: InsertQuiz): Promise<Quiz>;
@@ -51,6 +52,7 @@ export interface IStorage {
     answers: any;
   }): Promise<QuizAttempt>;
   getUserQuizAttempts(userId: string): Promise<QuizAttempt[]>;
+  getCompletedQuizzesCount(userId: string): Promise<number>;
   
   // Flashcard operations
   createFlashcard(flashcard: {
@@ -80,6 +82,8 @@ export interface IStorage {
   updateUserXP(userId: string, xpGained: number): Promise<User>;
   updateUserStreak(userId: string): Promise<User>;
   getUserAchievements(userId: string): Promise<Achievement[]>;
+  getLeaderboard(): Promise<User[]>;
+  getUserStats(userId: string): Promise<any>;
   
   // Learning session tracking
   createLearningSession(session: {
@@ -138,6 +142,14 @@ export class DatabaseStorage implements IStorage {
       .set({ progress, updatedAt: new Date() })
       .where(eq(topics.id, id));
   }
+  
+  async getCompletedTopicsCount(userId: string): Promise<number> {
+    const result = await db
+      .select({ count: count() })
+      .from(topics)
+      .where(and(eq(topics.userId, userId), eq(topics.progress, 100)));
+    return result[0].count;
+  }
 
   // Quiz operations
   async createQuiz(quiz: InsertQuiz): Promise<Quiz> {
@@ -170,6 +182,14 @@ export class DatabaseStorage implements IStorage {
       .from(quizAttempts)
       .where(eq(quizAttempts.userId, userId))
       .orderBy(desc(quizAttempts.completedAt));
+  }
+  
+  async getCompletedQuizzesCount(userId: string): Promise<number> {
+    const result = await db
+      .select({ count: count() })
+      .from(quizAttempts)
+      .where(eq(quizAttempts.userId, userId));
+    return result[0].count;
   }
 
   // Flashcard operations
@@ -377,6 +397,44 @@ export class DatabaseStorage implements IStorage {
       .from(achievements)
       .where(eq(achievements.userId, userId))
       .orderBy(desc(achievements.earnedAt));
+  }
+
+  async getLeaderboard(): Promise<User[]> {
+    return await db
+      .select()
+      .from(users)
+      .orderBy(desc(users.xp))
+      .limit(10);
+  }
+
+  async getUserStats(userId: string): Promise<any> {
+    const [avgScore] = await db
+      .select({ value: avg(quizAttempts.score) })
+      .from(quizAttempts)
+      .where(eq(quizAttempts.userId, userId));
+
+    const [sessionsCompleted] = await db
+      .select({ count: count() })
+      .from(learningSessions)
+      .where(eq(learningSessions.userId, userId));
+      
+    const [totalPracticeTime] = await db
+      .select({ total: sql`sum(${learningSessions.duration})` })
+      .from(learningSessions)
+      .where(eq(learningSessions.userId, userId));
+
+    const [bestPerformance] = await db
+        .select({ score: sql`max(${quizAttempts.score})` })
+        .from(quizAttempts)
+        .where(eq(quizAttempts.userId, userId));
+
+
+    return {
+      averageScore: avgScore?.value || 0,
+      sessionsCompleted: sessionsCompleted?.count || 0,
+      totalPracticeTime: totalPracticeTime?.total || 0,
+      bestPerformance: bestPerformance?.score || 0,
+    };
   }
 
   // Learning session tracking

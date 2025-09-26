@@ -1,8 +1,28 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenerativeAI, HarmBlockThreshold, HarmCategory } from "@google/generative-ai";
 
-const ai = new GoogleGenAI({ 
-  apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || "" 
-});
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+
+const safetySettings = [
+  {
+    category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+    threshold: HarmBlockThreshold.BLOCK_NONE,
+  },
+  {
+    category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+    threshold: HarmBlockThreshold.BLOCK_NONE,
+  },
+  {
+    category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+    threshold: HarmBlockThreshold.BLOCK_NONE,
+  },
+  {
+    category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+    threshold: HarmBlockThreshold.BLOCK_NONE,
+  },
+];
+
+
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash", safetySettings });
 
 export interface ExplanationRequest {
   topic: string;
@@ -48,12 +68,9 @@ export async function generateExplanation(request: ExplanationRequest): Promise<
   }
 
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: prompt,
-    });
-
-    return response.text || "Unable to generate explanation.";
+    const result = await model.generateContent(prompt);
+    const response = result.response;
+    return response.text();
   } catch (error) {
     console.error("Error generating explanation:", error);
     throw new Error("Failed to generate explanation");
@@ -82,39 +99,9 @@ export async function generateQuiz(topic: string, questionCount: number = 5): Pr
   - Include clear explanations for each answer`;
 
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-pro",
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: "object",
-          properties: {
-            questions: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  question: { type: "string" },
-                  options: {
-                    type: "array",
-                    items: { type: "string" },
-                    minItems: 4,
-                    maxItems: 4
-                  },
-                  correctAnswer: { type: "number" },
-                  explanation: { type: "string" }
-                },
-                required: ["question", "options", "correctAnswer", "explanation"]
-              }
-            }
-          },
-          required: ["questions"]
-        }
-      },
-      contents: prompt,
-    });
-
-    const rawJson = response.text;
+    const result = await model.generateContent(prompt);
+    const response = result.response;
+    const rawJson = response.text();
     if (rawJson) {
       const data: QuizResponse = JSON.parse(rawJson);
       return data;
@@ -143,32 +130,9 @@ export async function generateFlashcards(topic: string, cardCount: number = 10):
   Make the flashcards educational and focused on key concepts, terms, and facts about the topic.`;
 
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-pro",
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: "object",
-          properties: {
-            cards: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  front: { type: "string" },
-                  back: { type: "string" }
-                },
-                required: ["front", "back"]
-              }
-            }
-          },
-          required: ["cards"]
-        }
-      },
-      contents: prompt,
-    });
-
-    const rawJson = response.text;
+    const result = await model.generateContent(prompt);
+    const response = result.response;
+    const rawJson = response.text();
     if (rawJson) {
       const data: FlashcardResponse = JSON.parse(rawJson);
       return data;
@@ -212,12 +176,9 @@ export async function analyzeQuizPerformance(
   Keep it constructive and helpful.`;
 
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: prompt,
-    });
-
-    return response.text || "Unable to analyze performance.";
+    const result = await model.generateContent(prompt);
+    const response = result.response;
+    return response.text();
   } catch (error) {
     console.error("Error analyzing quiz performance:", error);
     throw new Error("Failed to analyze quiz performance");
@@ -239,26 +200,9 @@ export async function generateInterviewQuestions(
   Include a mix of technical and behavioral questions appropriate for the role and level.`;
 
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-pro",
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: "object",
-          properties: {
-            questions: {
-              type: "array",
-              items: { type: "string" }
-            },
-            tips: { type: "string" }
-          },
-          required: ["questions", "tips"]
-        }
-      },
-      contents: prompt,
-    });
-
-    const rawJson = response.text;
+    const result = await model.generateContent(prompt);
+    const response = result.response;
+    const rawJson = response.text();
     if (rawJson) {
       return JSON.parse(rawJson);
     } else {
@@ -268,4 +212,81 @@ export async function generateInterviewQuestions(
     console.error("Error generating interview questions:", error);
     throw new Error("Failed to generate interview questions");
   }
+}
+
+export async function generateChatResponse(
+  topicTitle: string,
+  topicContent: string,
+  history: { role: string; parts: { text: string }[] }[],
+  question: string
+): Promise<string> {
+  const systemPrompt = `You are "Chaitanya AI", a friendly and encouraging learning assistant. Your ONLY purpose is to discuss the topic of "${topicTitle}".
+
+Strict rules:
+- NEVER answer questions or discuss topics unrelated to "${topicTitle}".
+- If asked about anything else, politely decline and steer the conversation back to "${topicTitle}". For example: "That's an interesting question, but my focus is to help you master ${topicTitle}. Shall we get back to it?"
+- Keep your answers concise and easy to understand.
+- Use the provided context to answer questions accurately.
+
+Here is the context for "${topicTitle}":
+---
+${topicContent}
+---
+`;
+
+  try {
+    const chat = model.startChat({
+      history: [
+        { role: "user", parts: [{ text: systemPrompt }] },
+        { role: "model", parts: [{ text: `Great! I'm ready to help you learn about ${topicTitle}. Ask me anything!` }] },
+        ...history,
+      ],
+      generationConfig: {
+        maxOutputTokens: 1000,
+      },
+    });
+
+    const result = await chat.sendMessage(question);
+    const response = result.response;
+    return response.text();
+  } catch (error) {
+    console.error("Error generating chat response:", error);
+    throw new Error("Failed to generate chat response");
+  }
+}
+
+// This is a mock function. In a real application, you would use the YouTube Data API.
+export async function searchYoutubeVideos(query: string) {
+  console.log(`Searching YouTube for: ${query}`);
+  // Mock data representing a YouTube API response
+  return [
+    {
+      id: 'jfKfPfyJRdk',
+      title: `Learn ${query} in 100 Seconds`,
+      thumbnail: `https://i.ytimg.com/vi/jfKfPfyJRdk/hqdefault.jpg`,
+      channel: 'Fireship',
+      duration: '2:22',
+    },
+    {
+      id: 'DHvZLI7Db8E',
+      title: `What is ${query}?`,
+      thumbnail: `https://i.ytimg.com/vi/DHvZLI7Db8E/hqdefault.jpg`,
+      channel: 'IBM Technology',
+      duration: '7:44',
+    },
+    {
+      id: 's_LpPU_pQjY',
+      title: `${query} for Beginners`,
+      thumbnail: `https://i.ytimg.com/vi/s_LpPU_pQjY/hqdefault.jpg`,
+      channel: 'freeCodeCamp.org',
+      duration: '1:53:23',
+    },
+     {
+      id: 'y-de0y2NpLo',
+      title: `Introduction to ${query}`,
+      thumbnail: `https://i.ytimg.com/vi/y-de0y2NpLo/hqdefault.jpg`,
+      channel: 'Simplilearn',
+      duration: '10:05',
+    },
+  ];
 }

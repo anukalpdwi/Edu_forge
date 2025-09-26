@@ -24,6 +24,7 @@ import {
   Flame,
   BookOpen,
   Target,
+  Clock,
 } from "lucide-react";
 import { isUnauthorizedError } from "@/lib/authUtils";
 
@@ -80,16 +81,51 @@ export default function Community() {
   }, [isAuthenticated, isLoading, toast]);
 
   // Fetch feed posts
+
+  // Fetch feed posts
   const { data: posts, isLoading: postsLoading } = useQuery({
     queryKey: ["/api/feed"],
     enabled: isAuthenticated,
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/feed");
+      if (!res.ok) throw new Error("Failed to fetch feed");
+      return res.json();
+    },
   });
 
   // Fetch user achievements
   const { data: achievements, isLoading: achievementsLoading } = useQuery({
     queryKey: ["/api/user/achievements"],
     enabled: isAuthenticated,
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/user/achievements");
+      if (!res.ok) throw new Error("Failed to fetch achievements");
+      return res.json();
+    },
   });
+
+  // Fetch leaderboard
+  const { data: leaderboardData = [], isLoading: leaderboardLoading } = useQuery<User[]>({
+    queryKey: ["/api/leaderboard"],
+    enabled: isAuthenticated,
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/leaderboard");
+      if (!res.ok) throw new Error("Failed to fetch leaderboard");
+      return res.json();
+    },
+  });
+
+  // Fetch user stats
+  const { data: userStats, isLoading: userStatsLoading } = useQuery({
+    queryKey: ["/api/user/stats"],
+    enabled: isAuthenticated,
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/user/stats");
+      if (!res.ok) throw new Error("Failed to fetch user stats");
+      return res.json();
+    },
+  });
+
 
   // Create post mutation
   const createPostMutation = useMutation({
@@ -170,14 +206,6 @@ export default function Community() {
 
     createPostMutation.mutate(newPost);
   };
-
-  const leaderboardData = [
-    { rank: 1, name: "Sarah Chen", xp: 12450, level: 25, avatar: null },
-    { rank: 2, name: "Alex Rodriguez", xp: 11200, level: 22, avatar: null },
-    { rank: 3, name: "Jordan Park", xp: 10800, level: 21, avatar: null },
-    { rank: 4, name: "Taylor Swift", xp: 9600, level: 19, avatar: null },
-    { rank: 5, name: "Morgan Davis", xp: 9200, level: 18, avatar: null },
-  ];
 
   if (isLoading) {
     return (
@@ -530,30 +558,43 @@ export default function Community() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {leaderboardData.map((learner) => (
-                    <div key={learner.rank} className="flex items-center space-x-3 p-2 rounded-lg hover:bg-muted transition-colors">
-                      <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                        learner.rank === 1 ? 'bg-warning text-white' :
-                        learner.rank === 2 ? 'bg-muted-foreground text-white' :
-                        learner.rank === 3 ? 'bg-accent text-white' :
-                        'bg-muted text-muted-foreground'
-                      }`}>
-                        {learner.rank}
+                  {leaderboardLoading ? (
+                    [...Array(5)].map((_, i) => (
+                      <div key={i} className="flex items-center space-x-3 p-2 rounded-lg">
+                        <div className="shimmer w-6 h-6 rounded-full" />
+                        <div className="shimmer w-8 h-8 rounded-full" />
+                        <div className="flex-1 space-y-2">
+                          <div className="shimmer h-4 w-24 rounded" />
+                          <div className="shimmer h-3 w-32 rounded" />
+                        </div>
                       </div>
-                      <Avatar className="w-8 h-8">
-                        <AvatarImage src={learner.avatar || undefined} />
-                        <AvatarFallback className="bg-primary text-white text-xs">
-                          {learner.name.split(' ').map(n => n[0]).join('')}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1">
-                        <p className="font-medium text-sm">{learner.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {learner.xp.toLocaleString()} XP • Level {learner.level}
-                        </p>
+                    ))
+                  ) : (
+                    leaderboardData?.map((learner, index) => (
+                      <div key={learner.id} className="flex items-center space-x-3 p-2 rounded-lg hover:bg-muted transition-colors">
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                          index === 0 ? 'bg-warning text-white' :
+                          index === 1 ? 'bg-muted-foreground text-white' :
+                          index === 2 ? 'bg-accent text-white' :
+                          'bg-muted text-muted-foreground'
+                        }`}>
+                          {index + 1}
+                        </div>
+                        <Avatar className="w-8 h-8">
+                          <AvatarImage src={learner.profileImageUrl || undefined} />
+                          <AvatarFallback className="bg-primary text-white text-xs">
+                            {getInitials(learner)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1">
+                          <p className="font-medium text-sm">{learner.firstName} {learner.lastName}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {(learner.xp ?? 0).toLocaleString()} XP • Level {learner.level}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -561,21 +602,51 @@ export default function Community() {
             {/* Quick Actions */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg">Quick Actions</CardTitle>
+                <CardTitle className="text-lg">Your Performance</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3">
-                <Button className="w-full" variant="outline" data-testid="button-find-study-buddy">
-                  <Users className="mr-2 h-4 w-4" />
-                  Find Study Buddy
-                </Button>
-                <Button className="w-full" variant="outline" data-testid="button-join-challenge">
-                  <Target className="mr-2 h-4 w-4" />
-                  Join Challenge
-                </Button>
-                <Button className="w-full" variant="outline" data-testid="button-explore-topics">
-                  <BookOpen className="mr-2 h-4 w-4" />
-                  Explore Topics
-                </Button>
+              <CardContent className="space-y-4">
+              {userStatsLoading ? (
+                <>
+                  <div className="shimmer h-4 w-full rounded" />
+                  <div className="shimmer h-4 w-full rounded" />
+                  <div className="shimmer h-4 w-full rounded" />
+                  <div className="shimmer h-4 w-full rounded" />
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <TrendingUp className="h-4 w-4 text-success" />
+                      <span className="text-sm">Average Score</span>
+                    </div>
+                    <span className="font-semibold">{typeof userStats?.averageScore === 'number' ? userStats.averageScore.toFixed(2) : '0.00'}%</span>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <Target className="h-4 w-4 text-primary" />
+                      <span className="text-sm">Sessions Completed</span>
+                    </div>
+                    <span className="font-semibold">{userStats?.sessionsCompleted ?? 0}</span>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <Clock className="h-4 w-4 text-secondary" />
+                      <span className="text-sm">Total Practice Time</span>
+                    </div>
+                    <span className="font-semibold">{typeof userStats?.totalPracticeTime === 'number' ? (userStats.totalPracticeTime / 60).toFixed(1) : '0.0'} hrs</span>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <Award className="h-4 w-4 text-warning" />
+                      <span className="text-sm">Best Performance</span>
+                    </div>
+                    <span className="font-semibold">{typeof userStats?.bestPerformance === 'number' ? userStats.bestPerformance : 0}%</span>
+                  </div>
+                </>
+              )}
               </CardContent>
             </Card>
           </div>

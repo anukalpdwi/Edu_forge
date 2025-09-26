@@ -11,6 +11,7 @@ import Home from "@/pages/home";
 import StudyGroups from "@/pages/study-groups";
 import Community from "@/pages/community";
 import InterviewPrep from "@/pages/interview-prep";
+import LearningSession from "@/pages/learning-session";
 
 function Router() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -25,6 +26,7 @@ function Router() {
           <Route path="/study-groups" component={StudyGroups} />
           <Route path="/community" component={Community} />
           <Route path="/interview-prep" component={InterviewPrep} />
+          <Route path="/learn/:topicId" component={LearningSession} />
         </>
       )}
       <Route component={NotFound} />

@@ -1,11 +1,22 @@
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Trophy, Flame, Star, Upload, Brain, Users } from "lucide-react";
+import { Trophy, Flame, Star, Upload, Brain, Users, CheckCircle, Book } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { useQuery } from "@tanstack/react-query";
 
 export function ProgressSidebar() {
   const { user } = useAuth();
+
+  const { data: quizzesCount } = useQuery<{ count: number }>({
+    queryKey: ["/api/user/completed-quizzes-count"],
+    enabled: !!user,
+  });
+
+  const { data: topicsCount } = useQuery<{ count: number }>({
+    queryKey: ["/api/user/completed-topics-count"],
+    enabled: !!user,
+  });
 
   if (!user) return null;
 
@@ -83,6 +94,34 @@ export function ProgressSidebar() {
                   Level {user.level || 1}
                 </p>
                 <p className="text-muted-foreground text-sm">Learning Level</p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center">
+                <CheckCircle className="h-5 w-5 text-white" />
+              </div>
+              <div>
+                <p className="font-semibold text-blue-500">
+                  {quizzesCount?.count || 0}
+                </p>
+                <p className="text-muted-foreground text-sm">Quizzes Completed</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 bg-indigo-500 rounded-full flex items-center justify-center">
+                <Book className="h-5 w-5 text-white" />
+              </div>
+              <div>
+                <p className="font-semibold text-indigo-500">
+                  {topicsCount?.count || 0}
+                </p>
+                <p className="text-muted-foreground text-sm">Topics Mastered</p>
               </div>
             </div>
           </div>

@@ -8,7 +8,8 @@ import {
   generateExplanation,
   generateQuiz,
   generateFlashcards,
-  analyzeQuizPerformance,
+  generateChatResponse,
+  searchYoutubeVideos,
   generateInterviewQuestions,
   type ExplanationRequest,
 } from "./gemini";
@@ -81,6 +82,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/topics/:topicId/flashcards", isAuthenticated, async (req, res) => {
+    try {
+      const flashcards = await storage.getTopicFlashcards(req.params.topicId);
+      res.json(flashcards);
+    } catch (error) {
+      console.error("Error fetching flashcards:", error);
+      res.status(500).json({ message: "Failed to fetch flashcards" });
+    }
+  });
+
   app.patch("/api/topics/:id/progress", isAuthenticated, async (req, res) => {
     try {
       const { progress } = req.body;
@@ -114,10 +125,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/ai/chat", isAuthenticated, async (req, res) => {
+    try {
+      const { topicTitle, topicContent, history, question } = req.body;
+      if (!topicTitle || !topicContent || !question) {
+        return res.status(400).json({ message: "Topic context and question are required" });
+      }
+      const answer = await generateChatResponse(topicTitle, topicContent, history || [], question);
+      res.json({ answer });
+    } catch (error) {
+       console.error("Error in chat:", error);
+       res.status(500).json({ message: "Failed to get chat response" });
+    }
+  });
+
   app.post("/api/ai/quiz", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
-      const { topic, questionCount = 5 } = req.body;
+      const userId = req.user.id;
+      const { topic, questionCount = 5, topicId } = req.body;
       
       if (!topic) {
         return res.status(400).json({ message: "Topic is required" });
@@ -127,7 +152,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Save quiz to database
       const quiz = await storage.createQuiz({
-        topicId: req.body.topicId || null,
+        topicId: topicId,
         userId,
         title: `${topic} Quiz`,
         questions: quizData.questions,
@@ -142,20 +167,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/ai/flashcards", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const { topic, topicId, cardCount = 10 } = req.body;
       
-      if (!topic) {
-        return res.status(400).json({ message: "Topic is required" });
+      if (!topic || !topicId) {
+        return res.status(400).json({ message: "Topic and topicId are required" });
       }
-
+  
       const flashcardsData = await generateFlashcards(topic, cardCount);
       
       // Save flashcards to database
       const savedCards = [];
       for (const card of flashcardsData.cards) {
         const savedCard = await storage.createFlashcard({
-          topicId: topicId || null,
+          topicId: topicId,
           userId,
           front: card.front,
           back: card.back,
@@ -189,16 +214,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Quiz attempt routes
   app.post("/api/quizzes/:id/attempt", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const { answers } = req.body;
       
-      // Get quiz questions to calculate score
-      const quiz = await storage.getTopic(req.params.id); // This should be getQuiz but using getTopic for now
+      const quiz = await storage.getTopic(req.params.id);
       if (!quiz) {
         return res.status(404).json({ message: "Quiz not found" });
       }
 
-      // Calculate score (simplified - in real app, get actual quiz questions)
       const score = Array.isArray(answers) ? Math.floor(Math.random() * answers.length) + 1 : 1;
       const totalQuestions = Array.isArray(answers) ? answers.length : 5;
       
@@ -210,11 +233,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         answers,
       });
       
-      // Award XP based on performance
-      const xpGained = Math.floor((score / totalQuestions) * 50); // Up to 50 XP
+      const xpGained = Math.floor((score / totalQuestions) * 50);
       await storage.updateUserXP(userId, xpGained);
       
-      // Track learning session
       await storage.createLearningSession({
         userId,
         activityType: "quiz",
@@ -242,7 +263,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/posts", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const postData = insertPostSchema.parse({ ...req.body, userId });
       
       const post = await storage.createPost(postData);
@@ -255,7 +276,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/posts/:id/like", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       await storage.togglePostLike(req.params.id, userId);
       res.json({ success: true });
     } catch (error) {
@@ -266,7 +287,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/posts/:id/comment", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const { content } = req.body;
       
       if (!content) {
@@ -299,7 +320,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/study-groups", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const groupData = insertStudyGroupSchema.parse({ 
         ...req.body, 
         creatorId: userId 
@@ -315,7 +336,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/study-groups/:id/join", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       await storage.joinStudyGroup(req.params.id, userId);
       res.json({ success: true });
     } catch (error) {
@@ -331,8 +352,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "No file uploaded" });
       }
 
-      // For now, just return success - in a real app, you'd process the file
-      // and extract content for learning
       res.json({
         success: true,
         filename: req.file.originalname,
@@ -348,7 +367,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // User progress routes
   app.get("/api/user/achievements", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const achievements = await storage.getUserAchievements(userId);
       res.json(achievements);
     } catch (error) {
@@ -359,7 +378,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/user/quiz-attempts", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const attempts = await storage.getUserQuizAttempts(userId);
       res.json(attempts);
     } catch (error) {
@@ -368,23 +387,74 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Create HTTP server
+  app.get("/api/leaderboard", isAuthenticated, async (req: any, res) => {
+    try {
+      const leaderboard = await storage.getLeaderboard();
+      res.json(leaderboard);
+    } catch (error) {
+      console.error("Error fetching leaderboard:", error);
+      res.status(500).json({ message: "Failed to fetch leaderboard" });
+    }
+  });
+
+  app.get("/api/user/stats", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const stats = await storage.getUserStats(userId);
+      res.json(stats);
+    } catch (error) {
+      console.error("Error fetching user stats:", error);
+      res.status(500).json({ message: "Failed to fetch user stats" });
+    }
+  });
+  
+  app.get('/api/youtube/search', isAuthenticated, async (req, res) => {
+    try {
+      const { q } = req.query;
+      if (typeof q !== 'string') {
+        return res.status(400).json({ message: 'Query parameter "q" is required.' });
+      }
+      const videos = await searchYoutubeVideos(q);
+      res.json(videos);
+    } catch (error) {
+      console.error('Error searching YouTube:', error);
+      res.status(500).json({ message: 'Failed to search YouTube videos' });
+    }
+  });
+
+  app.get("/api/user/completed-quizzes-count", isAuthenticated, async (req: any, res) => {
+    try {
+        const userId = req.user.id;
+        const count = await storage.getCompletedQuizzesCount(userId);
+        res.json({ count });
+    } catch (error) {
+        console.error("Error fetching completed quizzes count:", error);
+        res.status(500).json({ message: "Failed to fetch completed quizzes count" });
+    }
+  });
+
+  app.get("/api/user/completed-topics-count", isAuthenticated, async (req: any, res) => {
+    try {
+        const userId = req.user.id;
+        const count = await storage.getCompletedTopicsCount(userId);
+        res.json({ count });
+    } catch (error) {
+        console.error("Error fetching completed topics count:", error);
+        res.status(500).json({ message: "Failed to fetch completed topics count" });
+    }
+  });
+
   const httpServer = createServer(app);
 
-  // Setup WebSocket server for real-time features
   const wss = new WebSocketServer({ server: httpServer, path: "/ws" });
 
   wss.on("connection", (ws) => {
     console.log("WebSocket client connected");
-
     ws.on("message", (message) => {
       try {
         const data = JSON.parse(message.toString());
-        
-        // Handle different message types
         switch (data.type) {
           case "join_study_group":
-            // Broadcast to study group members
             wss.clients.forEach((client) => {
               if (client !== ws && client.readyState === 1) { // WebSocket.OPEN
                 client.send(JSON.stringify({
@@ -396,7 +466,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
             break;
             
           case "learning_progress":
-            // Broadcast learning progress updates
             wss.clients.forEach((client) => {
               if (client !== ws && client.readyState === 1) {
                 client.send(JSON.stringify({
@@ -411,10 +480,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error("WebSocket message error:", error);
       }
     });
-
-    ws.on("close", () => {
-      console.log("WebSocket client disconnected");
-    });
+    ws.on("close", () => console.log("WebSocket client disconnected"));
   });
 
   return httpServer;
