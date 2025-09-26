@@ -93,19 +93,22 @@ function FlashcardComponent({ card }: { card: Flashcard }) {
     const [isFlipped, setIsFlipped] = useState(false);
   
     return (
-      <div className="w-full h-48 perspective-[1000px]">
+      <div className="w-full h-48 perspective-[1000px] cursor-pointer group">
         <div
           className={`relative w-full h-full transform-style-3d transition-transform duration-500 ${isFlipped ? 'rotate-y-180' : ''}`}
           onClick={() => setIsFlipped(!isFlipped)}
         >
           {/* Front */}
-          <div className="absolute w-full h-full backface-hidden flex items-center justify-center p-4 text-center bg-card border rounded-lg">
+          <div className="absolute w-full h-full backface-hidden flex items-center justify-center p-4 text-center bg-card border rounded-lg shadow-md">
             <p>{card.front}</p>
           </div>
           {/* Back */}
-          <div className="absolute w-full h-full backface-hidden rotate-y-180 flex items-center justify-center p-4 text-center bg-primary text-primary-foreground rounded-lg">
+          <div className="absolute w-full h-full backface-hidden rotate-y-180 flex items-center justify-center p-4 text-center bg-primary text-primary-foreground rounded-lg shadow-md">
             <p>{card.back}</p>
           </div>
+        </div>
+         <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            <FlipVertical className="w-4 h-4 text-muted-foreground" />
         </div>
       </div>
     );
@@ -150,11 +153,14 @@ export default function LearningSession() {
         history: chatHistory,
       }).then(res => res.json()),
     onSuccess: (data, variables) => {
-      setChatHistory(prev => [
-        ...prev.filter(m => m.parts[0].text !== 'Thinking...'),
-        { role: 'user', parts: [{ text: variables }] },
-        { role: 'model', parts: [{ text: data.answer }] }
-      ]);
+        setChatHistory(prev => {
+            const newHistory = prev.filter(m => m.parts[0].text !== 'Thinking...');
+            return [
+                ...newHistory,
+                { role: 'user', parts: [{ text: variables }] },
+                { role: 'model', parts: [{ text: data.answer }] }
+            ];
+        });
     },
     onError: () => {
       toast({
@@ -336,3 +342,4 @@ export default function LearningSession() {
     </div>
   );
 }
+

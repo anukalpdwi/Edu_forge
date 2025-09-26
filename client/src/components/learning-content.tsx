@@ -4,11 +4,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { useLocation } from "wouter";
 import {
   Brain,
   Zap,
@@ -40,6 +40,7 @@ export function LearningContent() {
   const [generatedContent, setGeneratedContent] = useState<string>("");
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [, setLocation] = useLocation();
 
   // Fetch user topics
   const { data: topics, isLoading: topicsLoading } = useQuery({
@@ -396,7 +397,11 @@ export function LearningContent() {
                           </p>
                         </div>
                       </div>
-                      <Button size="sm" data-testid={`button-continue-${topic.id}`}>
+                      <Button 
+                        size="sm" 
+                        data-testid={`button-continue-${topic.id}`}
+                        onClick={() => setLocation(`/learn/${topic.id}`)}
+                      >
                         <Play className="mr-2 h-4 w-4" />
                         Continue
                       </Button>
@@ -440,12 +445,13 @@ export function LearningContent() {
                 <Button
                   className="w-full bg-warning text-white hover:bg-warning/90"
                   onClick={() => {
-                    if (newTopic.trim()) {
-                      generateQuizMutation.mutate({ topic: newTopic });
+                    const latestTopic = topics?.[0];
+                    if (latestTopic) {
+                      generateQuizMutation.mutate({ topic: latestTopic.title, topicId: latestTopic.id });
                     } else {
-                      toast({
+                       toast({
                         title: "Error",
-                        description: "Please enter a topic first.",
+                        description: "Please create a topic first.",
                         variant: "destructive",
                       });
                     }
@@ -478,12 +484,13 @@ export function LearningContent() {
                 <Button
                   className="w-full bg-accent text-accent-foreground hover:bg-accent/90"
                   onClick={() => {
-                    if (newTopic.trim()) {
-                      generateFlashcardsMutation.mutate({ topic: newTopic });
+                    const latestTopic = topics?.[0];
+                    if (latestTopic) {
+                      generateFlashcardsMutation.mutate({ topic: latestTopic.title, topicId: latestTopic.id });
                     } else {
                       toast({
                         title: "Error",
-                        description: "Please enter a topic first.",
+                        description: "Please create a topic first.",
                         variant: "destructive",
                       });
                     }
@@ -504,3 +511,4 @@ export function LearningContent() {
     </div>
   );
 }
+
